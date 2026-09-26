@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+.DS_Store
+.env*
+
+# Daml build output
+daml/.daml
+
+# LocalNet runtime files (scripts/localnet.sh)
+.localnet-init.json
+.localnet-pids
+
+# Generated brag/marketing output (kept on disk, not part of the source repo)
+brag-output

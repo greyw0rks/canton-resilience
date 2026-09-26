@@ -1,0 +1,124 @@
+module Main where
+
+import DA.List (unique)
+
+{-
+  Reference governance contracts for Canton Resilience.
+
+  These model the *control layer* only: a policy (who may act and how many
+  must approve), a generic privileged action request, per-party approvals,
+  execution gated on the threshold, and an immutable audit record.
+
+  The action is deliberately generic (verb + target + detail) so the same
+  contracts protect a treasury transfer, a token mint, a fee change or a
+  protocol pause. The Decentralized Party / operator hosting layer lives
+  outside these business contracts and is wired through BitSafe's
+  Decentralization Manager.
+-}
+
+-- | Shared-control policy: a named quorum over a set of parties.
+template Policy
+  with
+    operator : Party        -- administers the policy contract
+    members : [Party]       -- parties eligible to approve
+    threshold : Int         -- approvals required to execute an action
+    application : Text       -- e.g. "Treasury", "Protocol Governance"
+  where
+    signatory operator
+    observer members
+
+    -- A policy is only well-formed with a non-empty, duplicate-free member set
+    -- and a threshold that at least one member and at most all members can meet.
+    ensure not (null members)
+        && unique members
+        && threshold > 0
+        && threshold <= length members
+
+    -- Open a privileged action against this policy.
+    nonconsuming choice RequestAction : ContractId ActionRequest
+      with
+        requester : Party
+        verb : Text
+        target : Text
+        detail : Text
+        reference : Text
+      controller requester
+      do
+        assertMsg "Requester must be a policy member" (requester `elem` members)
+        create ActionRequest with
+          operator; members; threshold; application
+          requester; verb; target; detail; reference
+          approvals = []
+
+    choice UpdateThreshold : ContractId Policy
+      with newThreshold : Int
+      controller operator
+      do
+        assertMsg "Threshold out of range"
+          (newThreshold > 0 && newThreshold <= length members)
+        create this with threshold = newThreshold
+
+-- | A privileged action awaiting quorum.
+template ActionRequest
+  with
+    operator : Party
+    members : [Party]
+    threshold : Int
+    application : Text
+    requester : Party
+    verb : Text
+    target : Text
+    detail : Text
+    reference : Text
+    approvals : [Party]
+  where
+    signatory operator, requester
+    observer members
+
+    -- Record an approval from an eligible member.
+    choice Approve : ContractId ActionRequest
+      with approver : Party
+      controller approver
+      do
+        assertMsg "Approver is not a policy member" (approver `elem` members)
+        assertMsg "Approver has already approved" (approver `notElem` approvals)
+        create this with approvals = approver :: approvals
+
+    -- Execute once the approval threshold is met; emits an audit record.
+    choice Execute : ContractId AuditRecord
+      with executor : Party
+      controller executor
+      do
+        assertMsg "Executor is not a policy member" (executor `elem` members)
+        assertMsg "Approval threshold not met" (length approvals >= threshold)
+        create AuditRecord with
+          operator; members; application
+          verb; target; detail; reference
+          approvals; executor
+
+    -- Withdraw a pending request. The policy operator can always reject; the
+    -- original requester can withdraw their own request. Archives the request
+    -- without producing an audit execution record.
+    choice Reject : ()
+      with canceller : Party
+      controller canceller
+      do
+        assertMsg "Only the operator or the requester may reject"
+          (canceller == operator || canceller == requester)
+        pure ()
+
+-- | Immutable trace of an executed action.
+template AuditRecord
+  with
+    operator : Party
+    members : [Party]
+    application : Text
+    verb : Text
+    target : Text
+    detail : Text
+    reference : Text
+    approvals : [Party]
+    executor : Party
+  where
+    signatory operator
+    observer members

@@ -1,0 +1,128 @@
+module Test where
+
+import Daml.Script
+import Main
+import DA.Assert ((===))
+
+{-
+  Acceptance tests for the Canton Resilience control layer.
+
+  These prove the threshold / authorization invariants are enforced *on the
+  ledger* by the Daml choices, not in the UI. Each `Script` is picked up by
+  `daml test`. The generic ActionRequest stands in for a treasury transfer
+  (verb = "TRANSFER") — the same contracts protect mint/burn/pause/param.
+-}
+
+-- A standard 2-of-3 treasury policy plus a non-member (dave).
+setup2of3 : Script (Party, Party, Party, Party, ContractId Policy)
+setup2of3 = do
+  operator <- allocateParty "Operator"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  carol <- allocateParty "Carol"
+  polCid <- submit operator $ createCmd Policy with
+    operator
+    members = [alice, bob, carol]
+    threshold = 2
+    application = "Treasury"
+  pure (alice, bob, carol, operator, polCid)
+
+request : Party -> ContractId Policy -> Script (ContractId ActionRequest)
+request requester polCid =
+  submit requester $ exerciseCmd polCid RequestAction with
+    requester
+    verb = "TRANSFER"
+    target = "vendor::party"
+    detail = "Send 50,000 CC"
+    reference = "REQ-1042"
+
+-- 2-of-3 can execute once the threshold is met.
+test_twoOfThree_executes : Script ()
+test_twoOfThree_executes = do
+  (alice, bob, _carol, _op, polCid) <- setup2of3
+  req0 <- request alice polCid
+  req1 <- submit alice $ exerciseCmd req0 Approve with approver = alice
+  req2 <- submit bob $ exerciseCmd req1 Approve with approver = bob
+  auditCid <- submit bob $ exerciseCmd req2 Execute with executor = bob
+  audit <- queryContractId bob auditCid
+  case audit of
+    Some a -> a.verb === "TRANSFER"
+    None -> abort "AuditRecord was not created"
+
+-- 1-of-3 cannot execute a 2-of-3 request (threshold not met).
+test_oneOfThree_cannotExecute : Script ()
+test_oneOfThree_cannotExecute = do
+  (alice, bob, _carol, _op, polCid) <- setup2of3
+  req0 <- request alice polCid
+  req1 <- submit alice $ exerciseCmd req0 Approve with approver = alice
+  -- only one approval so far; any member executing must fail
+  submitMustFail bob $ exerciseCmd req1 Execute with executor = bob
+
+-- A non-member cannot approve.
+test_nonMember_cannotApprove : Script ()
+test_nonMember_cannotApprove = do
+  (alice, _bob, _carol, _op, polCid) <- setup2of3
+  dave <- allocateParty "Dave"
+  req0 <- request alice polCid
+  submitMustFail dave $ exerciseCmd req0 Approve with approver = dave
+
+-- The same party cannot approve twice.
+test_noDoubleApproval : Script ()
+test_noDoubleApproval = do
+  (alice, _bob, _carol, _op, polCid) <- setup2of3
+  req0 <- request alice polCid
+  req1 <- submit alice $ exerciseCmd req0 Approve with approver = alice
+  submitMustFail alice $ exerciseCmd req1 Approve with approver = alice
+
+-- A request cannot be executed twice (Execute is consuming).
+test_noDoubleExecution : Script ()
+test_noDoubleExecution = do
+  (alice, bob, _carol, _op, polCid) <- setup2of3
+  req0 <- request alice polCid
+  req1 <- submit alice $ exerciseCmd req0 Approve with approver = alice
+  req2 <- submit bob $ exerciseCmd req1 Approve with approver = bob
+  _ <- submit bob $ exerciseCmd req2 Execute with executor = bob
+  -- the ActionRequest is archived; re-executing the stale cid must fail
+  submitMustFail bob $ exerciseCmd req2 Execute with executor = bob
+
+-- The policy owner (operator), who is not a member, cannot bypass the
+-- threshold: they can neither approve nor execute.
+test_ownerCannotBypass : Script ()
+test_ownerCannotBypass = do
+  (alice, _bob, _carol, operator, polCid) <- setup2of3
+  req0 <- request alice polCid
+  submitMustFail operator $ exerciseCmd req0 Approve with approver = operator
+  submitMustFail operator $ exerciseCmd req0 Execute with executor = operator
+
+-- An invalid threshold (<= 0 or > member count) is rejected at creation.
+test_invalidThreshold_rejected : Script ()
+test_invalidThreshold_rejected = do
+  operator <- allocateParty "Operator"
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  submitMustFail operator $ createCmd Policy with
+    operator; members = [alice, bob]; threshold = 0; application = "Treasury"
+  submitMustFail operator $ createCmd Policy with
+    operator; members = [alice, bob]; threshold = 3; application = "Treasury"
+
+-- An empty or duplicate member list is rejected at creation.
+test_invalidMembers_rejected : Script ()
+test_invalidMembers_rejected = do
+  operator <- allocateParty "Operator"
+  alice <- allocateParty "Alice"
+  submitMustFail operator $ createCmd Policy with
+    operator; members = []; threshold = 1; application = "Treasury"
+  submitMustFail operator $ createCmd Policy with
+    operator; members = [alice, alice]; threshold = 1; application = "Treasury"
+
+-- A non-member cannot even open a request.
+test_nonMember_cannotRequest : Script ()
+test_nonMember_cannotRequest = do
+  (_alice, _bob, _carol, _op, polCid) <- setup2of3
+  dave <- allocateParty "Dave"
+  submitMustFail dave $ exerciseCmd polCid RequestAction with
+    requester = dave
+    verb = "TRANSFER"
+    target = "vendor::party"
+    detail = "Send 50,000 CC"
+    reference = "REQ-1042"

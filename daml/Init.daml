@@ -1,0 +1,64 @@
+module Init where
+
+import Daml.Script
+import Main
+
+{-
+  LocalNet bootstrap for Canton Resilience.
+
+  Allocates the demo parties and creates one Policy per reference application
+  (mirroring lib/applications.ts), then returns the allocated party ids so the
+  bring-up script (scripts/localnet.sh) can write NEXT_PUBLIC_PARTY_MAP for the
+  frontend. Run with:
+
+    daml script --dar .daml/dist/canton-resilience-0.1.0.dar \
+      --script-name Init:initialize --ledger-host localhost --ledger-port 6865 \
+      --output-file init-output.json
+
+  (host/port depend on the ledger brought up in Phase 0.)
+-}
+
+data PartyEntry = PartyEntry
+  with
+    slug : Text     -- short id used by the frontend (lib/applications.ts)
+    party : Party   -- fully-qualified allocated Canton party
+  deriving (Show, Eq)
+
+data LedgerInit = LedgerInit
+  with
+    operator : Party
+    parties : [PartyEntry]
+  deriving (Show, Eq)
+
+initialize : Script LedgerInit
+initialize = do
+  operator <- allocatePartyWithHint "Operator" (PartyIdHint "Operator")
+  alice <- allocatePartyWithHint "Alice" (PartyIdHint "Alice")
+  bob <- allocatePartyWithHint "Bob" (PartyIdHint "Bob")
+  carol <- allocatePartyWithHint "Carol" (PartyIdHint "Carol")
+  dave <- allocatePartyWithHint "Dave" (PartyIdHint "Dave")
+  erin <- allocatePartyWithHint "Erin" (PartyIdHint "Erin")
+
+  -- One Policy per reference application (matches lib/applications.ts).
+  _ <- submit operator $ createCmd Policy with
+    operator; members = [alice, bob, carol]; threshold = 2
+    application = "Treasury"
+  _ <- submit operator $ createCmd Policy with
+    operator; members = [alice, bob, carol, dave]; threshold = 3
+    application = "Token Administration"
+  _ <- submit operator $ createCmd Policy with
+    operator; members = [alice, bob, carol]; threshold = 2
+    application = "Trading Administration"
+  _ <- submit operator $ createCmd Policy with
+    operator; members = [alice, bob, carol, dave, erin]; threshold = 3
+    application = "Protocol Governance"
+
+  pure LedgerInit with
+    operator
+    parties =
+      [ PartyEntry "alice" alice
+      , PartyEntry "bob" bob
+      , PartyEntry "carol" carol
+      , PartyEntry "dave" dave
+      , PartyEntry "erin" erin
+      ]
