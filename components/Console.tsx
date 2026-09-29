@@ -5,6 +5,7 @@ import { Shield, Wallet, ArrowRight, RotateCcw, CheckCircle2, Database } from 'l
 import { getApplication } from '@/lib/applications';
 import { buildAudit, canExecute, isAvailable, approvalsMet, type ConsoleState } from '@/lib/engine';
 import { getLedger } from '@/lib/ledger';
+import type { LedgerAuditRecord } from '@/lib/types';
 import { Hero } from './Hero';
 import { ApplicationSwitcher } from './ApplicationSwitcher';
 import { SharedControl } from './SharedControl';
@@ -12,7 +13,13 @@ import { DistributedHosting } from './DistributedHosting';
 import { AuditTrail } from './AuditTrail';
 import { Eyebrow, cn } from './ui';
 
-const NAV = ['Overview', 'Applications', 'Approvals', 'Hosting', 'Audit'];
+const NAV: { label: string; href: string }[] = [
+  { label: 'Overview', href: '#overview' },
+  { label: 'Applications', href: '#applications' },
+  { label: 'Approvals', href: '#approvals' },
+  { label: 'Hosting', href: '#hosting' },
+  { label: 'Audit', href: '#audit' },
+];
 
 function errorMessage(e: unknown): string {
   if (e instanceof Error && e.message) return e.message;
@@ -26,6 +33,7 @@ export function Console() {
   const [selectedId, setSelectedId] = useState('treasury');
   const [approvals, setApprovals] = useState<string[]>([]);
   const [executed, setExecuted] = useState(false);
+  const [records, setRecords] = useState<LedgerAuditRecord[]>([]);
   const [offlineNodes, setOfflineNodes] = useState<string[]>([]);
   const [walletConnected, setWalletConnected] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -34,9 +42,10 @@ export function Console() {
   const app = getApplication(selectedId);
 
   const refresh = useCallback(async () => {
-    const v = await ledger.view(app);
+    const [v, r] = await Promise.all([ledger.view(app), ledger.audit(app)]);
     setApprovals(v.approvals);
     setExecuted(v.executed);
+    setRecords(r);
   }, [ledger, app]);
 
   useEffect(() => {
@@ -44,10 +53,11 @@ export function Console() {
     setBusy(true);
     setError(null);
     ledger.openRequest(app).then(async () => {
-      const v = await ledger.view(app);
+      const [v, r] = await Promise.all([ledger.view(app), ledger.audit(app)]);
       if (!active) return;
       setApprovals(v.approvals);
       setExecuted(v.executed);
+      setRecords(r);
       setOfflineNodes([]);
       setBusy(false);
     }).catch((e) => {
@@ -75,7 +85,7 @@ export function Console() {
   }, [isLive, refresh]);
 
   const state: ConsoleState = { approvals, offlineNodes, walletConnected, executed };
-  const audit = useMemo(() => buildAudit(app, state), [app, approvals, offlineNodes, executed]);
+  const audit = useMemo(() => buildAudit(app, state, records), [app, approvals, offlineNodes, executed, records]);
 
   const toggleApproval = async (id: string) => {
     if (executed || busy) return;
@@ -147,9 +157,11 @@ export function Console() {
         onWallet={() => setWalletConnected((v) => !v)}
         ledgerKind={ledger.kind}
       />
-      <Hero app={app} offlineNodes={offlineNodes} />
+      <div id="overview" className="scroll-mt-20">
+        <Hero app={app} offlineNodes={offlineNodes} />
+      </div>
 
-      <section className="mx-auto max-w-6xl px-6 py-14">
+      <section id="applications" className="mx-auto max-w-6xl scroll-mt-20 px-6 py-14">
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
             <Eyebrow>Reference applications</Eyebrow>
@@ -168,8 +180,12 @@ export function Console() {
         <ApplicationSwitcher selected={selectedId} onSelect={setSelectedId} />
 
         <div className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-          <SharedControl app={app} approvals={approvals} locked={executed || busy} onToggle={toggleApproval} />
-          <DistributedHosting app={app} offlineNodes={offlineNodes} locked={executed} onToggle={toggleNode} />
+          <div id="approvals" className="scroll-mt-20">
+            <SharedControl app={app} approvals={approvals} locked={executed || busy} onToggle={toggleApproval} />
+          </div>
+          <div id="hosting" className="scroll-mt-20">
+            <DistributedHosting app={app} offlineNodes={offlineNodes} locked={executed} onToggle={toggleNode} />
+          </div>
         </div>
 
         {error && (
@@ -214,8 +230,11 @@ export function Console() {
           )}
         </div>
 
-        <div className="mt-4">
-          <AuditTrail events={audit} />
+        <div className="mt-4 scroll-mt-20" id="audit">
+          <AuditTrail
+            events={audit}
+            note={isLive && records.length > 0 ? 'read from ledger AuditRecord' : undefined}
+          />
         </div>
       </section>
     </>
@@ -243,13 +262,14 @@ function Topbar({
         <nav className="hidden flex-1 items-center gap-6 md:flex">
           {NAV.map((n, i) => (
             <a
-              key={n}
+              key={n.label}
+              href={n.href}
               className={cn(
                 'cursor-pointer text-[13px] transition-colors hover:text-white',
                 i === 0 ? 'text-white' : 'text-slate-500',
               )}
             >
-              {n}
+              {n.label}
             </a>
           ))}
         </nav>

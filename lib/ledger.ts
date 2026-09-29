@@ -1,4 +1,4 @@
-import type { DemoApplication } from './types';
+import type { DemoApplication, LedgerAuditRecord } from './types';
 
 // Ledger abstraction for the Canton Resilience control layer.
 //
@@ -25,6 +25,8 @@ export interface ResilienceLedger {
   revoke(app: DemoApplication, partyId: string): Promise<void>;
   execute(app: DemoApplication, executor: string): Promise<void>;
   view(app: DemoApplication): Promise<RequestView>;
+  // The immutable AuditRecord contracts for this application, oldest first.
+  audit(app: DemoApplication): Promise<LedgerAuditRecord[]>;
 }
 
 // --- In-memory implementation (default) -----------------------------------
@@ -33,6 +35,7 @@ export interface ResilienceLedger {
 class InMemoryLedger implements ResilienceLedger {
   readonly kind = 'in-memory' as const;
   private state = new Map<string, RequestView>();
+  private records = new Map<string, LedgerAuditRecord[]>();
 
   private ensure(app: DemoApplication): RequestView {
     let v = this.state.get(app.id);
@@ -45,6 +48,7 @@ class InMemoryLedger implements ResilienceLedger {
 
   async openRequest(app: DemoApplication) {
     this.state.set(app.id, { approvals: [], executed: false });
+    this.records.delete(app.id); // demo reset; a real ledger keeps audit records forever
   }
 
   async approve(app: DemoApplication, partyId: string) {
@@ -61,16 +65,31 @@ class InMemoryLedger implements ResilienceLedger {
     v.approvals = v.approvals.filter((id) => id !== partyId);
   }
 
-  async execute(app: DemoApplication, _executor: string) {
+  async execute(app: DemoApplication, executor: string) {
     const v = this.ensure(app);
     if (v.approvals.length < app.threshold)
       throw new Error('Approval threshold not met');
     v.executed = true;
+    // Mirror the ledger's Execute → AuditRecord effect for the demo.
+    const list = this.records.get(app.id) ?? [];
+    list.push({
+      verb: app.action.verb,
+      target: app.action.to ?? app.action.from ?? app.name,
+      detail: app.action.detail,
+      reference: app.action.reference,
+      approvals: [...v.approvals],
+      executor: app.parties.some((p) => p.id === executor) ? executor : app.parties[0].id,
+    });
+    this.records.set(app.id, list);
   }
 
   async view(app: DemoApplication): Promise<RequestView> {
     const v = this.ensure(app);
     return { approvals: [...v.approvals], executed: v.executed };
+  }
+
+  async audit(app: DemoApplication): Promise<LedgerAuditRecord[]> {
+    return [...(this.records.get(app.id) ?? [])];
   }
 }
 
@@ -113,6 +132,11 @@ class HttpLedger implements ResilienceLedger {
   async view(app: DemoApplication): Promise<RequestView> {
     const data = await this.call('view', app);
     return { approvals: data.view?.approvals ?? [], executed: Boolean(data.view?.executed) };
+  }
+
+  async audit(app: DemoApplication): Promise<LedgerAuditRecord[]> {
+    const data = await this.call('audit', app);
+    return (data.records ?? []) as LedgerAuditRecord[];
   }
 }
 

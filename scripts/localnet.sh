@@ -67,9 +67,11 @@ echo "==> allocating parties + creating policies (Init:initialize)"
     --output-file "$INIT_OUT" )
 
 echo "==> starting JSON API v1 on :$JSON_PORT"
-daml json-api \
-  --ledger-host localhost --ledger-port "$LEDGER_PORT" \
-  --http-port "$JSON_PORT" --allow-insecure-tokens &
+# Must run under the project's 2.10.6 SDK: `json-api` was removed in Daml 3.x, so
+# outside the project dir the 3.x assistant rejects it. cd into daml/ pins 2.10.6.
+( cd "$DAML_DIR" && daml json-api \
+    --ledger-host localhost --ledger-port "$LEDGER_PORT" \
+    --http-port "$JSON_PORT" --allow-insecure-tokens ) &
 echo $! >> "$PIDS_FILE"
 
 echo "==> writing .env.local"

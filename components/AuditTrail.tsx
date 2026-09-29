@@ -22,14 +22,21 @@ const TONE: Record<AuditKind, string> = {
 
 // Auditability: every request, approval, hosting change and execution is
 // captured as an ordered, traceable record.
-export function AuditTrail({ events }: { events: AuditEvent[] }) {
+export function AuditTrail({ events, note }: { events: AuditEvent[]; note?: string }) {
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between">
         <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
           <FileCheck2 size={15} className="text-brand-400" /> Audit trail
         </span>
-        <Pill>{events.length} events</Pill>
+        <div className="flex items-center gap-2">
+          {note && (
+            <span className="hidden font-mono text-[10px] uppercase tracking-wider text-emerald-400 sm:inline">
+              {note}
+            </span>
+          )}
+          <Pill>{events.length} events</Pill>
+        </div>
       </div>
 
       <ol className="mt-4 space-y-px">

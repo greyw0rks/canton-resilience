@@ -47,12 +47,13 @@ app/            Next.js app router — layout (fonts), page, Tailwind globals
 components/     Console (state + ledger), Hero, ApplicationSwitcher, SharedControl,
                 DistributedHosting, AuditTrail, Architecture, icons, ui (primitives)
 lib/            types.ts (domain), applications.ts (the four apps),
-                engine.ts (pure policy/hosting/audit), ledger.ts (ledger client)
+                engine.ts (pure policy/hosting/audit), ledger.ts (ledger client),
+                wallet.ts (Grofty signing seam)
 daml/           daml.yaml + reusable Policy / ActionRequest / AuditRecord contracts,
                 Test.daml (acceptance tests), Init.daml (LocalNet bootstrap)
 app/api/ledger/ server route that bridges the browser to the Canton JSON API v1
 scripts/        localnet.sh — one-command LocalNet bring-up
-docs/           ARCHITECTURE.md, LOCALNET.md
+docs/           ARCHITECTURE.md, LOCALNET.md, SUBMISSION.md
 ```
 
 The UI is built with **Tailwind CSS v4** (CSS-first config in `app/globals.css`, no
@@ -66,7 +67,9 @@ The UI is built with **Tailwind CSS v4** (CSS-first config in `app/globals.css`,
   Activate it by running against LocalNet (`npm run ledger:up`), which sets `NEXT_PUBLIC_LEDGER_MODE`.
 
 `lib/engine.ts` mirrors the Daml choices in `daml/Main.daml`, so the same policy/hosting/audit
-logic maps onto a real ledger.
+logic maps onto a real ledger. In live mode the audit trail is **read back from the on-ledger
+`AuditRecord` contracts** (via the `audit` op), not reconstructed in the UI — see
+**[docs/SUBMISSION.md](docs/SUBMISSION.md)** for what is on-ledger vs. an intentional seam.
 
 ## Daml package + LocalNet
 

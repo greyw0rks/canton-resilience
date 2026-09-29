@@ -1,4 +1,4 @@
-import type { AuditEvent, DemoApplication } from './types';
+import type { AuditEvent, DemoApplication, LedgerAuditRecord } from './types';
 
 // Pure derivations over the live demo state. Keeping these free of React lets
 // the same policy/hosting/audit logic map cleanly onto the Daml choices that
@@ -28,9 +28,19 @@ export const canExecute = (app: DemoApplication, s: ConsoleState) =>
 
 // Build the audit trail from current state. Deterministic ordering:
 // request, approvals (in party order), hosting events, then execution.
-export const buildAudit = (app: DemoApplication, s: ConsoleState): AuditEvent[] => {
+//
+// `records` are the real AuditRecord contracts read back from the ledger. When
+// present, the execution entries come from the ledger (real executor + quorum),
+// not from synthetic state — this is what makes the audit trail authoritative
+// in live mode rather than a UI reconstruction.
+export const buildAudit = (
+  app: DemoApplication,
+  s: ConsoleState,
+  records: LedgerAuditRecord[] = [],
+): AuditEvent[] => {
   const events: AuditEvent[] = [];
   let at = 0;
+  const nameOf = (slug: string) => app.parties.find((p) => p.id === slug)?.name ?? slug;
   const push = (e: Omit<AuditEvent, 'id' | 'at'>) =>
     events.push({ ...e, id: `${app.id}-${at}`, at: at++ });
 
@@ -62,7 +72,17 @@ export const buildAudit = (app: DemoApplication, s: ConsoleState): AuditEvent[] 
     }
   }
 
-  if (s.executed) {
+  if (records.length > 0) {
+    // Authoritative: one entry per immutable AuditRecord on the ledger.
+    for (const r of records) {
+      push({
+        kind: 'executed',
+        label: `${r.verb} executed`,
+        detail: `On-ledger AuditRecord · ${r.reference} · quorum ${r.approvals.length}/${app.parties.length}`,
+        actor: nameOf(r.executor),
+      });
+    }
+  } else if (s.executed) {
     push({
       kind: 'executed',
       label: `${app.action.verb} executed`,

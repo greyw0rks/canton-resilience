@@ -63,3 +63,14 @@ export interface AuditEvent {
   actor?: string;
   at: number; // sequence index; deterministic, not wall-clock
 }
+
+// A real, immutable AuditRecord contract read back from the ledger (the shape
+// of daml/Main.daml's AuditRecord). Party fields are de-qualified to UI slugs.
+export interface LedgerAuditRecord {
+  verb: string;
+  target: string;
+  detail: string;
+  reference: string;
+  approvals: string[]; // approver slugs, in the order recorded on-ledger
+  executor: string; // slug of the party that executed
+}

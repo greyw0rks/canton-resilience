@@ -124,6 +124,22 @@ async function viewApp(app: DemoApplication) {
   };
 }
 
+// Read the immutable AuditRecord contracts back from the ledger. Party fields
+// are de-qualified to UI slugs. Approvals are recorded newest-first on-ledger
+// (cons onto the head), so reverse to present them in approval order.
+async function auditApp(app: DemoApplication) {
+  const reader = qualify(app.parties[0].id);
+  const rows = await query(reader, tid('AuditRecord'), { application: app.name });
+  return rows.map(({ payload: p }) => ({
+    verb: p.verb,
+    target: deQualify(p.target),
+    detail: p.detail,
+    reference: p.reference,
+    approvals: ((p.approvals ?? []) as string[]).slice().reverse().map(deQualify),
+    executor: deQualify(p.executor),
+  }));
+}
+
 // Ensure a pending ActionRequest exists for the app; create one from the
 // app's Policy via RequestAction if not. Idempotent — never resets state.
 async function openRequest(app: DemoApplication) {
@@ -184,6 +200,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       case 'view':
         return NextResponse.json({ ok: true, view: await viewApp(app) });
+      case 'audit':
+        return NextResponse.json({ ok: true, records: await auditApp(app) });
       default:
         return NextResponse.json({ error: `Unknown op "${body.op}"` }, { status: 400 });
     }
