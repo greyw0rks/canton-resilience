@@ -12,5 +12,3 @@ parties:
   - Carol
   - Dave
   - Erin
-build-options:
-  - -Wno-unused-binds

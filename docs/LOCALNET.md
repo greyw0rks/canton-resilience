@@ -51,9 +51,16 @@ This runs `scripts/localnet.sh`, which:
    reference application,
 4. starts the HTTP JSON API v1 on `localhost:7575` with `--allow-insecure-tokens`,
 5. writes `.env.local` with `NEXT_PUBLIC_LEDGER_MODE=json-api`, `LEDGER_URL`,
-   and `LEDGER_PARTY_MAP` (UI slug → allocated Canton party).
+   `LEDGER_ID` (`sandbox`), `LEDGER_PACKAGE_ID` (the DAR's main package id), and
+   `LEDGER_PARTY_MAP` (UI slug → allocated Canton party).
 
 Stop everything with `npm run ledger:stop`.
+
+> **Verified 2026-09-29** against Daml SDK 2.10.6 (JDK 17, Corretto): `daml build`
+> + `daml test` (all cases green), `npm run ledger:up`, and the full
+> request→approve→approve→execute flow driven through `/api/ledger` on the live
+> ledger, including the ledger rejecting under-threshold execute, double-approve,
+> and non-member actions with human-readable messages.
 
 ## 3. Run the app against the ledger
 
@@ -89,7 +96,13 @@ member list rejected; policy owner cannot bypass the threshold. See `daml/Test.d
 - **`daml: command not found`** — re-run the `export PATH="$HOME/.daml/bin:$PATH"` line.
 - **JSON API rejects the token** — the sandbox must be started (it is, by the
   script) and the JSON API must run with `--allow-insecure-tokens`. Token minting
-  lives in one place: `mintToken()` in `app/api/ledger/route.ts`.
+  lives in one place: `mintToken()` in `app/api/ledger/route.ts`. The 2.x JSON API
+  requires the token to carry the participant's `ledgerId` (`sandbox`); a missing
+  one yields `401 "ledgerId missing in access token"`.
+- **`Cannot resolve any template ID from request`** — the 2.x JSON API resolves
+  template ids only by concrete **package id**, not the `#package-name` shorthand.
+  `LEDGER_PACKAGE_ID` in `.env.local` must match the uploaded DAR; re-run
+  `npm run ledger:up` after any change to `daml/` to refresh it.
 - **`No Policy on the ledger for "…"`** — the Init script didn't run; re-run
   `npm run ledger:up`.
 - **Ports busy** — stop a previous run with `npm run ledger:stop` (frees 6865/7575).

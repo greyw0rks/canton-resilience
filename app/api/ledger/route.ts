@@ -22,9 +22,12 @@ const LEDGER_URL = process.env.LEDGER_URL; // e.g. http://localhost:7575
 const APP_ID = process.env.LEDGER_APP_ID ?? 'canton-resilience';
 const PARTY_MAP: Record<string, string> = safeJson(process.env.LEDGER_PARTY_MAP) ?? {};
 
-// Package-name-qualified template ids target the deployed DAR without pinning a
-// package hash (supported by the 2.x JSON API via the leading '#').
-const PKG = '#canton-resilience';
+// The Daml 2.x HTTP JSON API requires the acting party's token to carry the
+// participant's ledger id, and it resolves template ids only by concrete
+// package id (the '#package-name' shorthand is a 3.x feature). scripts/localnet.sh
+// discovers both from the running sandbox / built DAR and writes them here.
+const LEDGER_ID = process.env.LEDGER_ID ?? 'sandbox';
+const PKG = process.env.LEDGER_PACKAGE_ID ?? '#canton-resilience';
 const tid = (t: string) => `${PKG}:Main:${t}`;
 
 function safeJson(s: string | undefined): any {
@@ -45,6 +48,7 @@ function mintToken(party: string): string {
   const header = { alg: 'none', typ: 'JWT' };
   const payload = {
     'https://daml.com/ledger-api': {
+      ledgerId: LEDGER_ID,
       applicationId: APP_ID,
       actAs: [party],
       readAs: [party],

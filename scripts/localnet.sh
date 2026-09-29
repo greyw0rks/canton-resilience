@@ -42,6 +42,13 @@ command -v java >/dev/null || { echo "ERROR: no JDK on PATH / JAVA_HOME unset"; 
 echo "==> daml build"
 ( cd "$DAML_DIR" && daml build )
 
+# The 2.x JSON API resolves template ids by concrete package id, so capture the
+# DAR's main package id to hand to app/api/ledger/route.ts via .env.local.
+echo "==> reading main package id from the DAR"
+PKG_ID="$( cd "$DAML_DIR" && daml damlc inspect-dar --json "$DAR" \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).main_package_id))' )"
+echo "    package id: $PKG_ID"
+
 echo "==> starting sandbox on :$LEDGER_PORT"
 ( cd "$DAML_DIR" && daml sandbox --port "$LEDGER_PORT" ) &
 echo $! > "$PIDS_FILE"
@@ -77,6 +84,9 @@ cat > "$ROOT/.env.local" <<EOF
 NEXT_PUBLIC_LEDGER_MODE=json-api
 LEDGER_URL=http://localhost:$JSON_PORT
 LEDGER_APP_ID=canton-resilience
+# 'daml sandbox' always reports its ledger id as the participant name "sandbox".
+LEDGER_ID=sandbox
+LEDGER_PACKAGE_ID=$PKG_ID
 LEDGER_PARTY_MAP=$PARTY_MAP
 EOF
 

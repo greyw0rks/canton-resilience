@@ -7,6 +7,12 @@ out
 # Daml build output
 daml/.daml
 
+# Canton sandbox logs
+daml/log
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo
+
 # LocalNet runtime files (scripts/localnet.sh)
 .localnet-init.json
 .localnet-pids
