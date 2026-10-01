@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  daml:
+    name: Daml contracts (build + acceptance tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Daml SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.daml
+          key: daml-sdk-2.10.6
+
+      - name: Install Daml SDK 2.10.6
+        run: |
+          if [ ! -x "$HOME/.daml/bin/daml" ]; then
+            curl -sSL https://get.daml.com | sh -s 2.10.6
+          fi
+          echo "$HOME/.daml/bin" >> "$GITHUB_PATH"
+
+      - name: daml build
+        working-directory: daml
+        run: daml build
+
+      - name: daml test (threshold-workflow acceptance suite)
+        working-directory: daml
+        run: daml test
+
+  web:
+    name: Next app (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

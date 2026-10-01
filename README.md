@@ -79,6 +79,7 @@ for the one-time toolchain install and details. In short:
 ```bash
 cd daml && daml build && daml test   # compile contracts + run acceptance tests
 npm run ledger:up                     # sandbox + JSON API v1 + parties + policies, writes .env.local
+npm run verify:ledger                 # drive request→approve→execute on the live ledger, assert invariants
 npm run dev                           # http://localhost:3000, now backed by the ledger
 ```
 
@@ -92,6 +93,9 @@ npm install
 npm run dev      # http://localhost:3000 (in-memory ledger by default)
 npm run build    # production build + typecheck
 ```
+
+A narrated, hands-free walkthrough of a single protected action moving through all four
+pillars is at **`/demo`** (runs on the in-memory model, so it always plays).
 
 ## Demo flow (≈90s)
 
